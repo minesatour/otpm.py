@@ -1,4 +1,5 @@
 import asyncio
+import mitmproxy
 from mitmproxy.tools.dump import DumpMaster
 import tkinter as tk
 from tkinter import messagebox
