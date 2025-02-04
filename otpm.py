@@ -1,3 +1,4 @@
+import asyncio
 import mitmproxy.http
 from mitmproxy import ctx
 from mitmproxy.tools.dump import DumpMaster
@@ -69,7 +70,7 @@ def launch_chrome():
     return driver
 
 # Function to start mitmproxy
-def start_mitmproxy(gui):
+async def start_mitmproxy(gui):
     options = Options(listen_host='127.0.0.1', listen_port=8080)
     m = DumpMaster(options)
 
@@ -79,7 +80,7 @@ def start_mitmproxy(gui):
     m.addons.add(interceptor)
 
     # Run mitmproxy
-    m.run()
+    await m.run()
 
 # Main function to run mitmproxy, launch Chrome, and start the GUI
 def main():
@@ -88,7 +89,7 @@ def main():
     gui = OTPGUI(root)
 
     # Start mitmproxy in a separate thread
-    mitm_thread = threading.Thread(target=start_mitmproxy, args=(gui,))
+    mitm_thread = threading.Thread(target=lambda: asyncio.run(start_mitmproxy(gui)))
     mitm_thread.start()
 
     # Launch Chrome in a separate thread
