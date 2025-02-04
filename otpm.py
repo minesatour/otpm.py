@@ -1,51 +1,11 @@
-import mitmproxy.http
-from mitmproxy import ctx
+import asyncio
+from mitmproxy.tools.dump import DumpMaster
 import tkinter as tk
 from tkinter import messagebox
 import re
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 import time
-import threading
-import asyncio
-from mitmproxy.tools.dump import DumpMaster
-
-# Create a simple tkinter window for displaying OTP
-class OTPGUI:
-    def __init__(self, master):
-        self.master = master
-        self.master.title("Captured OTP")
-        self.master.geometry("300x150")
-        
-        self.otp_label = tk.Label(master, text="OTP will appear here", font=("Arial", 12))
-        self.otp_label.pack(pady=20)
-    
-    def update_otp(self, otp):
-        self.otp_label.config(text=f"Captured OTP: {otp}")
-        messagebox.showinfo("OTP Captured", f"OTP: {otp}")
-
-# Regular expression pattern to capture OTP-like codes (e.g., 6-digit numbers)
-otp_pattern = r"\b\d{6}\b"  # Simple pattern for 6-digit OTPs (you can refine this)
-
-# Function to intercept HTTP requests and responses
-class OTPInterceptor:
-    def __init__(self):
-        self.gui = None
-
-    def set_gui(self, gui):
-        self.gui = gui
-
-    def response(self, flow: mitmproxy.http.HTTPFlow):
-        # Look for OTPs in the response body (e.g., in the HTML or JSON response)
-        if flow.response.content:
-            content = flow.response.content.decode('utf-8', errors='ignore')
-            otp_matches = re.findall(otp_pattern, content)
-            if otp_matches:
-                otp = otp_matches[0]  # Taking the first match (adjust as necessary)
-                if self.gui:
-                    self.gui.update_otp(otp)
-                    ctx.log.info(f"Captured OTP: {otp}")
 
 # Function to launch Chrome with Selenium
 def launch_chrome():
@@ -68,6 +28,43 @@ def launch_chrome():
 
     return driver
 
+
+# Regular expression pattern to capture OTP-like codes (e.g., 6-digit numbers)
+otp_pattern = r"\b\d{6}\b"  # Simple pattern for 6-digit OTPs (you can refine this)
+
+# Create a simple tkinter window for displaying OTP
+class OTPGUI:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Captured OTP")
+        self.master.geometry("300x150")
+        
+        self.otp_label = tk.Label(master, text="OTP will appear here", font=("Arial", 12))
+        self.otp_label.pack(pady=20)
+    
+    def update_otp(self, otp):
+        self.otp_label.config(text=f"Captured OTP: {otp}")
+        messagebox.showinfo("OTP Captured", f"OTP: {otp}")
+
+# Function to intercept HTTP requests and responses
+class OTPInterceptor:
+    def __init__(self):
+        self.gui = None
+
+    def set_gui(self, gui):
+        self.gui = gui
+
+    def response(self, flow: mitmproxy.http.HTTPFlow):
+        # Look for OTPs in the response body (e.g., in the HTML or JSON response)
+        if flow.response.content:
+            content = flow.response.content.decode('utf-8', errors='ignore')
+            otp_matches = re.findall(otp_pattern, content)
+            if otp_matches:
+                otp = otp_matches[0]  # Taking the first match (adjust as necessary)
+                if self.gui:
+                    self.gui.update_otp(otp)
+                    ctx.log.info(f"Captured OTP: {otp}")
+
 # Set up the mitmproxy add-on
 def start_mitmproxy():
     # Initialize the GUI
@@ -85,8 +82,10 @@ def start_mitmproxy():
     # Add the interceptor to the mitmproxy master
     m.addons.add(interceptor)
 
-    # Start mitmproxy in the event loop
-    asyncio.run(m.run())
+    # Use asyncio.run to run the event loop for mitmproxy
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(m.run())
 
     # Launch Chrome and start monitoring OTP
     launch_chrome()
