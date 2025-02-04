@@ -56,7 +56,7 @@ def launch_chrome():
     chrome_options.add_argument("--ignore-certificate-errors")  # Avoid SSL issues
 
     # Update the path to chromedriver if necessary
-    chromedriver_path = "/path/to/chromedriver"
+    chromedriver_path = "/path/to/chromedriver"  # Replace with the actual path to chromedriver
 
     # Create a new Chrome browser instance with Selenium
     driver = webdriver.Chrome(service=Service(chromedriver_path), options=chrome_options)
