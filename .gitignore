@@ -1,0 +1,19 @@
+# Ignore compiled Python files
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore mitmproxy dumps and logs
+*.dump
+mitmproxy/
+
+# Ignore ChromeDriver binary if included
+chromedriver
+
+# Ignore venv (virtual environment)
+venv/
+.env
