@@ -15,7 +15,7 @@ class OTPInterceptor:
         self.mitmproxy_ready = threading.Event()  # Ensure mitmproxy is running before launching browser
 
     def start_mitmproxy(self):
-        """Starts mitmproxy with a new asyncio event loop."""
+        """Starts mitmproxy with an explicit asyncio event loop."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
@@ -26,9 +26,11 @@ class OTPInterceptor:
         self.mitmproxy_ready.set()
 
         try:
-            loop.run_until_complete(m.run())
+            loop.run_until_complete(m.run())  # Explicitly run mitmproxy inside the event loop
         except KeyboardInterrupt:
             m.shutdown()
+        except Exception as e:
+            print(f"Mitmproxy Error: {e}")
 
     def launch_chrome(self):
         """Launches a headless Chrome browser after ensuring mitmproxy is running."""
