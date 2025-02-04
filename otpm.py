@@ -6,7 +6,6 @@ import threading
 import time
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
-from selenium.webdriver.common.by import By
 import logging
 import sys
 
@@ -16,14 +15,11 @@ class OTPInterceptor:
 
     def start_mitmproxy(self):
         """Starts mitmproxy inside a properly initialized asyncio event loop."""
-        loop = asyncio.new_event_loop()  # Create a new asyncio event loop
-        asyncio.set_event_loop(loop)  # Set it as the current event loop
-
         options = Options(listen_host='127.0.0.1', listen_port=8080)
         m = DumpMaster(options, with_termlog=False, with_dumper=False)
 
         try:
-            loop.run_until_complete(m.run())  # Run mitmproxy in this loop
+            asyncio.run(m.run())  # Run mitmproxy in this loop
         except KeyboardInterrupt:
             m.shutdown()
         except Exception as e:
