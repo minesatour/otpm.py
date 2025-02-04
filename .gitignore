@@ -1,19 +1,20 @@
-# Ignore compiled Python files
+# Python virtual environments
+venv/
 __pycache__/
-*.pyc
-*.pyo
 
-# Ignore system files
+# IDE or Editor config files (e.g., VSCode, PyCharm, etc.)
+.vscode/
+.idea/
+
+# OS-specific files
 .DS_Store
 Thumbs.db
 
-# Ignore mitmproxy dumps and logs
-*.dump
-mitmproxy/
+# Log files
+*.log
 
-# Ignore ChromeDriver binary if included
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Chromedriver binary
 chromedriver
-
-# Ignore venv (virtual environment)
-venv/
-.env
