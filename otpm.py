@@ -5,17 +5,24 @@ from mitmproxy.tools.dump import DumpMaster
 from mitmproxy.options import Options
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 import re
 import threading
 import time
+import os
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service
 
-# Regular expression pattern to capture OTP-like codes (e.g., 6-digit numbers)
-otp_pattern = r"\b\d{6}\b"  # Simple pattern for 6-digit OTPs (you can refine this)
+# Path to ChromeDriver (update if necessary)
+CHROMEDRIVER_PATH = "/usr/bin/chromedriver"  # Change if needed
+
+# Path to allowed sites file
+ALLOWED_SITES_FILE = "allowed_sites.txt"
+
+# Regular expression pattern to capture OTP-like codes (6-digit numbers)
+otp_pattern = r"\b\d{6}\b"
 
 # Create a simple tkinter window for displaying OTP
 class OTPGUI:
@@ -31,72 +38,94 @@ class OTPGUI:
         self.otp_label.config(text=f"Captured OTP: {otp}")
         messagebox.showinfo("OTP Captured", f"OTP: {otp}")
 
-# Function to intercept HTTP responses
+# OTP Interceptor that only captures OTPs from allowed sites
 class OTPInterceptor:
-    def __init__(self):
+    def __init__(self, allowed_sites):
         self.gui = None
+        self.allowed_sites = allowed_sites
 
     def set_gui(self, gui):
         self.gui = gui
 
     def response(self, flow: mitmproxy.http.HTTPFlow):
-        if flow.response.content:
-            content = flow.response.content.decode('utf-8', errors='ignore')
-            otp_matches = re.findall(otp_pattern, content)
-            if otp_matches:
-                otp = otp_matches[0]  # Take the first match
-                if self.gui:
-                    self.gui.update_otp(otp)
-                    ctx.log.info(f"Captured OTP: {otp}")
+        if any(site in flow.request.url for site in self.allowed_sites):
+            if flow.response.content:
+                content = flow.response.content.decode('utf-8', errors='ignore')
+                otp_matches = re.findall(otp_pattern, content)
+                if otp_matches:
+                    otp = otp_matches[0]
+                    if self.gui:
+                        self.gui.update_otp(otp)
+                        ctx.log.info(f"Captured OTP from {flow.request.url}: {otp}")
 
 # Function to launch Chrome with Selenium
 def launch_chrome():
     chrome_options = ChromeOptions()
     chrome_options.add_argument("--proxy-server=http://127.0.0.1:8080")  # Use mitmproxy as the proxy
     chrome_options.add_argument("--ignore-certificate-errors")  # Avoid SSL issues
-
-    # Update the path to chromedriver if necessary
-    chromedriver_path = "/usr/local/bin/chromedriver"  # Replace with the actual path to chromedriver
-
-    # Create a new Chrome browser instance with Selenium
-    driver = webdriver.Chrome(service=Service(chromedriver_path), options=chrome_options)
-
-    # Open a URL (Modify this to the target website)
+    
+    driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
     driver.get("https://example.com")
-
-    # Wait for the user to trigger an OTP
-    time.sleep(30)  # Adjust sleep time based on interaction needs
-
+    time.sleep(30)
     return driver
 
 # Function to start mitmproxy
-async def start_mitmproxy(gui):
+async def start_mitmproxy(gui, allowed_sites):
     options = Options(listen_host='127.0.0.1', listen_port=8080)
     m = DumpMaster(options)
-
-    # Create and add OTP interceptor
-    interceptor = OTPInterceptor()
+    interceptor = OTPInterceptor(allowed_sites)
     interceptor.set_gui(gui)
     m.addons.add(interceptor)
-
-    # Run mitmproxy
     await m.run()
 
-# Main function to run mitmproxy, launch Chrome, and start the GUI
+# Function to load allowed websites
+def load_allowed_sites():
+    if not os.path.exists(ALLOWED_SITES_FILE):
+        return []
+    with open(ALLOWED_SITES_FILE, "r") as f:
+        return [line.strip() for line in f.readlines() if line.strip()]
+
+# Function to configure allowed sites
+def configure_allowed_sites():
+    allowed_sites = load_allowed_sites()
+    print("Current Allowed Websites:")
+    for site in allowed_sites:
+        print(f" - {site}")
+    
+    while True:
+        choice = input("Do you want to add/remove a site? (add/remove/show/exit): ")
+        if choice == "add":
+            site = input("Enter the site URL (e.g., example.com): ")
+            if site and site not in allowed_sites:
+                allowed_sites.append(site)
+        elif choice == "remove":
+            site = input("Enter the site URL to remove: ")
+            if site in allowed_sites:
+                allowed_sites.remove(site)
+        elif choice == "show":
+            print("Allowed sites:", allowed_sites)
+        elif choice == "exit":
+            break
+    
+    with open(ALLOWED_SITES_FILE, "w") as f:
+        for site in allowed_sites:
+            f.write(site + "\n")
+    print("Updated allowed sites.")
+
+# Main function
 def main():
-    # Initialize Tkinter GUI
+    configure_allowed_sites()
+    allowed_sites = load_allowed_sites()
+
     root = tk.Tk()
     gui = OTPGUI(root)
-
-    # Start mitmproxy in a separate thread
-    mitm_thread = threading.Thread(target=lambda: asyncio.run(start_mitmproxy(gui)))
+    
+    mitm_thread = threading.Thread(target=lambda: asyncio.run(start_mitmproxy(gui, allowed_sites)))
     mitm_thread.start()
 
-    # Launch Chrome in a separate thread
     chrome_thread = threading.Thread(target=launch_chrome)
     chrome_thread.start()
 
-    # Start the Tkinter event loop
     root.mainloop()
 
 if __name__ == "__main__":
