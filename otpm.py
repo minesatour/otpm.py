@@ -1,98 +1,67 @@
 import asyncio
 import mitmproxy
 from mitmproxy.tools.dump import DumpMaster
-import tkinter as tk
-from tkinter import messagebox
-import re
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import time
+import threading
 
-# Function to launch Chrome with Selenium
-def launch_chrome():
-    # Set up Chrome options
-    chrome_options = Options()
-    chrome_options.add_argument("--proxy-server=http://127.0.0.1:8080")  # Set mitmproxy as the proxy
-
-    # Specify the actual path to the chromedriver executable
-    chromedriver_path = '/usr/local/bin/chromedriver'
-
-    # Create a new Chrome browser instance with Selenium
-    driver = webdriver.Chrome(executable_path=chromedriver_path, options=chrome_options)
-
-    # Open a URL (e.g., user input or pre-defined URL)
-    driver.get("https://example.com")  # Modify this to the desired website
-
-    # Wait for user to interact or for OTP to be triggered
-    time.sleep(30)  # Adjust sleep time to match interaction time
-    # The script will continue to monitor OTP capture during this time
-
-    return driver
-
-
-# Regular expression pattern to capture OTP-like codes (e.g., 6-digit numbers)
-otp_pattern = r"\b\d{6}\b"  # Simple pattern for 6-digit OTPs (you can refine this)
-
-# Create a simple tkinter window for displaying OTP
-class OTPGUI:
-    def __init__(self, master):
-        self.master = master
-        self.master.title("Captured OTP")
-        self.master.geometry("300x150")
-        
-        self.otp_label = tk.Label(master, text="OTP will appear here", font=("Arial", 12))
-        self.otp_label.pack(pady=20)
-    
-    def update_otp(self, otp):
-        self.otp_label.config(text=f"Captured OTP: {otp}")
-        messagebox.showinfo("OTP Captured", f"OTP: {otp}")
-
-# Function to intercept HTTP requests and responses
 class OTPInterceptor:
     def __init__(self):
-        self.gui = None
+        self.driver = None
 
-    def set_gui(self, gui):
-        self.gui = gui
+    def start_mitmproxy(self):
+        # Setup mitmproxy options
+        options = mitmproxy.options.Options(listen_host='127.0.0.1', listen_port=8080)
+        m = DumpMaster(options)
+
+        # Create asyncio event loop and run mitmproxy
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(m.run())  # Ensure it runs the mitmproxy master
+
+    def launch_chrome(self):
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")  # Run in headless mode (without opening browser window)
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--proxy-server=http://127.0.0.1:8080")  # Mitmproxy listens on this port
+
+        chromedriver_path = "/path/to/chromedriver"  # Update with correct chromedriver path
+        service = Service(chromedriver_path)
+        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        self.driver.get("http://example.com")  # Use the URL you want to test with
+
+        # Wait for OTP or login process to happen
+        time.sleep(10)  # Adjust based on your use case
+        self.driver.quit()
 
     def response(self, flow: mitmproxy.http.HTTPFlow):
-        # Look for OTPs in the response body (e.g., in the HTML or JSON response)
-        if flow.response.content:
-            content = flow.response.content.decode('utf-8', errors='ignore')
-            otp_matches = re.findall(otp_pattern, content)
-            if otp_matches:
-                otp = otp_matches[0]  # Taking the first match (adjust as necessary)
-                if self.gui:
-                    self.gui.update_otp(otp)
-                    ctx.log.info(f"Captured OTP: {otp}")
+        # Intercept and log the OTP response (or any relevant response you want to capture)
+        if "otp" in flow.request.pretty_url:
+            print(f"Intercepted OTP response: {flow.response.content.decode('utf-8')}")
 
-# Set up the mitmproxy add-on
-def start_mitmproxy():
-    # Initialize the GUI
-    root = tk.Tk()
-    gui = OTPGUI(root)
 
-    # Create the interceptor and link the GUI
+def start_mitmproxy_thread():
     interceptor = OTPInterceptor()
-    interceptor.set_gui(gui)
+    interceptor.start_mitmproxy()
 
-    # Run mitmproxy with the interceptor
-    options = mitmproxy.options.Options(listen_host='127.0.0.1', listen_port=8080)
-    m = DumpMaster(options)
 
-    # Add the interceptor to the mitmproxy master
-    m.addons.add(interceptor)
+def launch_chrome_thread():
+    interceptor = OTPInterceptor()
+    interceptor.launch_chrome()
 
-    # Use asyncio.run to run the event loop for mitmproxy
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(m.run())
-
-    # Launch Chrome and start monitoring OTP
-    launch_chrome()
-
-    # Start the tkinter main loop
-    root.mainloop()
 
 if __name__ == "__main__":
-    start_mitmproxy()
+    # Start mitmproxy in a separate thread
+    mitmproxy_thread = threading.Thread(target=start_mitmproxy_thread)
+    mitmproxy_thread.start()
+
+    # Start the browser automation in a separate thread
+    chrome_thread = threading.Thread(target=launch_chrome_thread)
+    chrome_thread.start()
+
+    # Join threads so the main program waits for them to finish
+    mitmproxy_thread.join()
+    chrome_thread.join()
