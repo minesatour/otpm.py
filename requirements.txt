@@ -1,3 +1,7 @@
-selenium==4.9.0
-mitmproxy==10.4.2
+mitmproxy==8.0.0
+selenium==4.8.0
+selenium-stealth==2.0.1
+psutil==5.9.0
+pycryptodome==3.15.0
+tkinter==0.1.0
 
