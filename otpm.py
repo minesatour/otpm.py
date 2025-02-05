@@ -112,6 +112,7 @@ def start_mitmproxy(interceptor):
     options = Options(listen_host='127.0.0.1', listen_port=mitmproxy_port, ssl_insecure=True)
     m = DumpMaster(options)
     m.addons.add(interceptor)
+    print(f"🔧 Starting mitmproxy on {mitmproxy_port}...")
     m.run()
 
 def run_mitmproxy_thread(interceptor):
@@ -123,13 +124,16 @@ def run_mitmproxy_thread(interceptor):
 def launch_chrome(target_url, use_mitmproxy):
     chrome_options = ChromeOptions()
 
+    # Configure Proxy Settings (Use mitmproxy without authentication by default)
     if use_mitmproxy:
         chrome_options.add_argument(f"--proxy-server=http://127.0.0.1:{mitmproxy_port}")
     else:
         chrome_options.add_argument(f"--proxy-server=http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}")
 
+    # Configure SSL & Security Flags for Mitmproxy
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
+    chrome_options.add_argument("--no-sandbox")  # In case Chrome is restricted
     chrome_options.add_argument("--headless")  # Remove if you want to see the browser
     chrome_options.add_argument("--disable-gpu")
 
