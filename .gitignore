@@ -1,20 +1,27 @@
-# Python virtual environments
-venv/
+# Ignore Python bytecode files
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-# IDE or Editor config files (e.g., VSCode, PyCharm, etc.)
-.vscode/
-.idea/
+# Ignore virtual environment folder
+venv/
 
-# OS-specific files
+# Ignore credentials files or sensitive data (e.g., OTP storage)
+OTP_STORAGE_FILE
+*.enc
+
+# Ignore browser drivers if necessary
+chromedriver
+chromedriver.exe
+
+# Ignore log files
+*.log
+
+# Ignore system files
 .DS_Store
 Thumbs.db
 
-# Log files
-*.log
+# Ignore the allowed sites file to keep it private
+allowed_sites.txt
 
-# Jupyter notebook checkpoints
-.ipynb_checkpoints/
-
-# Chromedriver binary
-chromedriver
