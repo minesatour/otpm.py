@@ -103,24 +103,19 @@ async def start_mitmproxy(gui, allowed_sites, interceptor):
     m.addons.add(interceptor)
     await m.run()
 
-# Launch Chrome with Stealth Mode
-def launch_chrome(target_url, use_mitmproxy, interactive_mode=False):
+# Launch Chrome in Normal Mode (User Interaction Enabled)
+def launch_chrome(use_mitmproxy):
     chrome_options = ChromeOptions()
-
+    
     if use_mitmproxy:
         chrome_options.add_argument("--proxy-server=http://127.0.0.1:8082")
 
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-
-    if interactive_mode:
-        chrome_options.add_argument("--incognito")
-        chrome_options.add_argument("--start-maximized")  # Allow interaction with the window
-        chrome_options.add_argument("--disable-headless")  # Disable headless mode
-    else:
-        chrome_options.add_argument("--headless")  # Use headless mode after login
-        chrome_options.add_argument("--disable-gpu")
+    
+    # DO NOT use headless mode - allow user interaction
+    # chrome_options.add_argument("--headless")  <-- Removed to allow browsing
 
     driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
     
@@ -134,7 +129,6 @@ def launch_chrome(target_url, use_mitmproxy, interactive_mode=False):
         fix_hairline=True,
     )
 
-    driver.get(target_url)
     driver.maximize_window()
     driver.implicitly_wait(10)
     return driver
@@ -167,22 +161,19 @@ def main():
     gui = OTPGUI(root)
     interceptor = OTPInterceptor(allowed_sites)
     
-    target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
     attack_mode = simpledialog.askinteger("Mode", "Choose Mode:\n1. mitmproxy Interception\n2. JavaScript Extraction", minvalue=1, maxvalue=2)
 
     mitm_thread = None
-    interactive_mode = False
-
     if attack_mode == 1:
         mitm_thread = threading.Thread(target=lambda: asyncio.run(start_mitmproxy(gui, allowed_sites, interceptor)))
         mitm_thread.start()
-    else:
-        interactive_mode = True  # Allow interaction when using JavaScript extraction mode
     
-    driver = launch_chrome(target_url, attack_mode == 1, interactive_mode=interactive_mode)
+    # Open Chrome for User to Browse and Log In Manually
+    driver = launch_chrome(use_mitmproxy=(attack_mode == 1))
+
+    messagebox.showinfo("Action Required", "Browse the internet and log in manually. Click OK once you've requested an OTP.")
 
     if attack_mode == 1:
-        messagebox.showinfo("Action Required", "Log in and request an OTP, then click OK to start interception.")
         interceptor.wait_for_otp()
     else:
         otp = extract_otp_via_js(driver)
