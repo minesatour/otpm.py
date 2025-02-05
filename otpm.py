@@ -13,6 +13,7 @@ import json
 import sqlite3
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
+import requests
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -30,11 +31,8 @@ OTP_STORAGE_FILE = "captured_otps.db"
 otp_pattern = r"\b\d{6}\b"
 mitmproxy_port = 8082
 
-# 🔹 PROXY SETTINGS (USE REAL PROXY HERE)
-PROXY_HOST = "your-proxy-ip"
-PROXY_PORT = "your-proxy-port"
-PROXY_USERNAME = "your-username"
-PROXY_PASSWORD = "your-password"
+# 🔹 FREE PROXY API
+PROXY_API_URL = "https://www.proxy-list.download/api/v1/get?type=http"
 
 # 🔹 ENCRYPTION KEY (STORED IN MEMORY)
 key = get_random_bytes(16)
@@ -68,6 +66,18 @@ def kill_processes_using_port(port):
                 print(f"✅ Terminated process {conn.pid} using port {port}")
             except psutil.NoSuchProcess:
                 pass
+
+# 🔹 FETCH A FREE PROXY
+def get_free_proxy():
+    try:
+        response = requests.get(PROXY_API_URL)
+        if response.status_code == 200:
+            proxies = response.text.strip().split("\r\n")
+            if proxies:
+                return proxies[0]  # Return the first available proxy
+    except Exception as e:
+        print(f"⚠ Failed to fetch proxy: {e}")
+    return None
 
 # 🔹 GUI TO DISPLAY OTP
 class OTPGUI:
@@ -108,73 +118,42 @@ class OTPInterceptor:
         print("🚀 Waiting for OTP request...")
 
 # 🔹 START MITMPROXY IN BACKGROUND
-async def start_mitmproxy(interceptor):
+def start_mitmproxy(interceptor):
     options = Options(listen_host='127.0.0.1', listen_port=mitmproxy_port, ssl_insecure=True)
     m = DumpMaster(options)
     m.addons.add(interceptor)
     print(f"🔧 Starting mitmproxy on {mitmproxy_port}...")
-    await asyncio.to_thread(m.run)
+    m.run()
 
 def run_mitmproxy_thread(interceptor):
-    asyncio.run(start_mitmproxy(interceptor))  # Use asyncio.run to run the event loop
+    mitmproxy_thread = threading.Thread(target=start_mitmproxy, args=(interceptor,))
+    mitmproxy_thread.daemon = True
+    mitmproxy_thread.start()
 
 # 🔹 LAUNCH CHROME WITH PROXY & MITMPROXY
-def launch_chrome(target_url, use_mitmproxy):
+def launch_chrome(target_url):
     chrome_options = ChromeOptions()
+    free_proxy = get_free_proxy()
 
-    # Configure Proxy Settings (Use mitmproxy without authentication by default)
-    if use_mitmproxy:
-        chrome_options.add_argument(f"--proxy-server=http://127.0.0.1:{mitmproxy_port}")
+    if free_proxy:
+        print(f"🆓 Using free proxy: {free_proxy}")
+        chrome_options.add_argument(f"--proxy-server=http://{free_proxy}")
     else:
-        chrome_options.add_argument(f"--proxy-server=http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}")
+        print("⚠ No free proxies available, using mitmproxy instead...")
+        chrome_options.add_argument(f"--proxy-server=http://127.0.0.1:{mitmproxy_port}")
 
-    # Configure SSL & Security Flags for Mitmproxy
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
-    chrome_options.add_argument("--no-sandbox")  # In case Chrome is restricted
-    chrome_options.add_argument("--headless")  # Remove if you want to see the browser
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-gpu")
 
     driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
-    
-    # Apply Selenium Stealth
-    stealth(driver,
-        languages=["en-US", "en"],
-        vendor="Google Inc.",
-        platform="Win32",
-        webgl_vendor="Intel Inc.",
-        renderer="Intel Iris OpenGL Engine",
-        fix_hairline=True,
-    )
-
+    stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32", webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
     driver.get(target_url)
     driver.maximize_window()
     driver.implicitly_wait(10)
     return driver
-
-# 🔹 JAVASCRIPT OTP EXTRACTION
-def extract_otp_via_js(driver):
-    try:
-        wait = WebDriverWait(driver, 15)
-        otp_element = wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'code') or contains(text(), 'OTP')]")))
-        otp_text = otp_element.text
-        otp_matches = re.findall(otp_pattern, otp_text)
-        if otp_matches:
-            return otp_matches[0]
-    except Exception:
-        pass
-    return None
-
-# 🔹 AUTOMATIC OTP EXTRACTION
-def auto_extract_otp(driver, interceptor, gui):
-    otp = extract_otp_via_js(driver)
-    if otp:
-        gui.update_otp(otp)
-        print(f"✅ Captured OTP via JavaScript: {otp}")
-    else:
-        print("⚠ No OTP found via JavaScript, switching to mitmproxy...")
-        interceptor.wait_for_otp()
-        run_mitmproxy_thread(interceptor)
 
 # 🔹 MAIN FUNCTION
 def main():
@@ -187,13 +166,12 @@ def main():
     interceptor.set_gui(gui)
 
     target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
-
     messagebox.showinfo("Action Required", "🚀 Script will auto-detect OTP extraction method.")
-    
-    driver = launch_chrome(target_url, use_mitmproxy=True)
-    
-    auto_extract_otp(driver, interceptor, gui)
-    
+
+    driver = launch_chrome(target_url)
+    interceptor.wait_for_otp()
+    run_mitmproxy_thread(interceptor)
+
     root.mainloop()
     driver.quit()
 
