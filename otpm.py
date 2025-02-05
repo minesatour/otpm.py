@@ -5,8 +5,7 @@ from mitmproxy.tools.dump import DumpMaster
 from mitmproxy.options import Options
 
 import tkinter as tk
-from tkinter import messagebox
-from tkinter import simpledialog
+from tkinter import messagebox, simpledialog
 import threading
 import os
 import psutil
@@ -29,6 +28,7 @@ ALLOWED_SITES_FILE = "allowed_sites.txt"
 OTP_STORAGE_FILE = "captured_otps.enc"
 otp_pattern = r"\b\d{6}\b"
 key = get_random_bytes(16)  # AES encryption key
+PROXY_SERVER = "http://your-proxy-provider.com:port"  # Replace with real proxy
 
 # Function to encrypt OTPs
 def encrypt_otp(otp):
@@ -104,12 +104,14 @@ async def start_mitmproxy(gui, allowed_sites, interceptor):
     m.addons.add(interceptor)
     await m.run()
 
-# Launch Chrome with Stealth Mode
+# Launch Chrome with Stealth Mode and Proxy
 def launch_chrome(target_url, use_mitmproxy, interactive_mode=False):
     chrome_options = ChromeOptions()
 
     if use_mitmproxy:
         chrome_options.add_argument("--proxy-server=http://127.0.0.1:8082")
+    else:
+        chrome_options.add_argument(f"--proxy-server={PROXY_SERVER}")
 
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
@@ -117,10 +119,9 @@ def launch_chrome(target_url, use_mitmproxy, interactive_mode=False):
 
     if interactive_mode:
         chrome_options.add_argument("--incognito")
-        chrome_options.add_argument("--start-maximized")  # Allow interaction with the window
-        chrome_options.add_argument("--disable-headless")  # Disable headless mode
+        chrome_options.add_argument("--start-maximized")
     else:
-        chrome_options.add_argument("--headless")  # Use headless mode after login
+        chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
 
     driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
@@ -168,7 +169,6 @@ def auto_extract_otp(driver, interceptor, gui):
         print(f"Captured OTP automatically via JavaScript: {otp}")
     else:
         print("No OTP found via JavaScript.")
-    # Try mitmproxy interception as fallback
     interceptor.wait_for_otp()
     asyncio.run(start_mitmproxy(gui, load_allowed_sites(), interceptor))
 
@@ -181,14 +181,8 @@ def main():
     interceptor = OTPInterceptor(allowed_sites)
     
     target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
-    
-    # Auto-detect OTP site and extraction method
-    messagebox.showinfo("Action Required", "The script will auto-detect the OTP extraction method.")
     driver = launch_chrome(target_url, use_mitmproxy=True, interactive_mode=True)
-    
-    # Start auto OTP extraction
     auto_extract_otp(driver, interceptor, gui)
-    
     root.mainloop()
     driver.quit()
 
