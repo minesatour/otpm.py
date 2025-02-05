@@ -23,8 +23,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium_stealth import stealth
 import re
 import subprocess
-import logging
-from random import choice
 
 # 🔹 CONFIGURATIONS
 CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
@@ -37,51 +35,39 @@ PROXY_HOST = "your-proxy-ip"
 PROXY_PORT = "your-proxy-port"
 PROXY_USERNAME = "your-username"
 PROXY_PASSWORD = "your-password"
-PROXY_LIST = [("proxy1", "port1", "username1", "password1"), ("proxy2", "port2", "username2", "password2")]  # Proxy rotation
 
 # 🔹 ENCRYPTION KEY (STORED IN MEMORY)
 key = get_random_bytes(16)
 
-# 🔹 LOGGING
-logging.basicConfig(filename='otp_interception.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
 # 🔹 SETUP DATABASE
 def setup_database():
-    try:
-        conn = sqlite3.connect(OTP_STORAGE_FILE)
-        c = conn.cursor()
-        c.execute("CREATE TABLE IF NOT EXISTS otps (id INTEGER PRIMARY KEY, otp TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
-        conn.commit()
-        conn.close()
-        logging.info("Database setup complete.")
-    except Exception as e:
-        logging.error(f"Error setting up database: {e}")
+    conn = sqlite3.connect(OTP_STORAGE_FILE)
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS otps (id INTEGER PRIMARY KEY, otp TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
+    conn.commit()
+    conn.close()
 
 # 🔹 FUNCTION TO ENCRYPT & STORE OTP IN DATABASE
 def store_otp(otp):
-    try:
-        conn = sqlite3.connect(OTP_STORAGE_FILE)
-        c = conn.cursor()
-        cipher = AES.new(key, AES.MODE_EAX)
-        nonce = cipher.nonce
-        ciphertext, _ = cipher.encrypt_and_digest(otp.encode('utf-8'))
-        c.execute("INSERT INTO otps (otp) VALUES (?)", (ciphertext.hex(),))
-        conn.commit()
-        conn.close()
-        logging.info(f"Stored OTP: {otp}")
-    except Exception as e:
-        logging.error(f"Error storing OTP: {e}")
+    conn = sqlite3.connect(OTP_STORAGE_FILE)
+    c = conn.cursor()
+    cipher = AES.new(key, AES.MODE_EAX)
+    nonce = cipher.nonce
+    ciphertext, _ = cipher.encrypt_and_digest(otp.encode('utf-8'))
+    c.execute("INSERT INTO otps (otp) VALUES (?)", (ciphertext.hex(),))
+    conn.commit()
+    conn.close()
 
 # 🔹 KILL EXISTING PROCESSES ON PORT 8082
 def kill_processes_using_port(port):
-    try:
-        for conn in psutil.net_connections(kind='inet'):
-            if conn.laddr.port == port:
+    for conn in psutil.net_connections(kind='inet'):
+        if conn.laddr.port == port:
+            try:
                 proc = psutil.Process(conn.pid)
                 proc.terminate()
                 print(f"✅ Terminated process {conn.pid} using port {port}")
-    except psutil.NoSuchProcess:
-        pass
+            except psutil.NoSuchProcess:
+                pass
 
 # 🔹 GUI TO DISPLAY OTP
 class OTPGUI:
@@ -96,7 +82,6 @@ class OTPGUI:
         store_otp(otp)
         self.otp_label.config(text=f"Captured OTP: {otp}")
         messagebox.showinfo("OTP Captured", f"OTP: {otp}")
-        logging.info(f"OTP displayed: {otp}")
 
 # 🔹 MITMPROXY INTERCEPTOR
 class OTPInterceptor:
@@ -116,41 +101,38 @@ class OTPInterceptor:
                 if self.gui:
                     self.gui.update_otp(otp)
                     print(f"✅ Captured OTP from {flow.request.url}: {otp}")
-                    logging.info(f"Captured OTP from {flow.request.url}: {otp}")
             self.waiting_for_otp = False
 
     def wait_for_otp(self):
         self.waiting_for_otp = True
         print("🚀 Waiting for OTP request...")
-        logging.info("Waiting for OTP request...")
 
 # 🔹 START MITMPROXY IN BACKGROUND
-def start_mitmproxy(interceptor):
+async def start_mitmproxy(interceptor):
     options = Options(listen_host='127.0.0.1', listen_port=mitmproxy_port, ssl_insecure=True)
     m = DumpMaster(options)
     m.addons.add(interceptor)
     print(f"🔧 Starting mitmproxy on {mitmproxy_port}...")
-    m.run()
+    await asyncio.to_thread(m.run)
 
 def run_mitmproxy_thread(interceptor):
-    mitmproxy_thread = threading.Thread(target=start_mitmproxy, args=(interceptor,))
-    mitmproxy_thread.daemon = True
-    mitmproxy_thread.start()
+    asyncio.run(start_mitmproxy(interceptor))  # Use asyncio.run to run the event loop
 
 # 🔹 LAUNCH CHROME WITH PROXY & MITMPROXY
 def launch_chrome(target_url, use_mitmproxy):
     chrome_options = ChromeOptions()
 
-    # Rotate proxy if needed
-    proxy = choice(PROXY_LIST)
-    proxy_url = f"http://{proxy[2]}:{proxy[3]}@{proxy[0]}:{proxy[1]}" if use_mitmproxy else f"http://127.0.0.1:{mitmproxy_port}"
-    chrome_options.add_argument(f"--proxy-server={proxy_url}")
-    
+    # Configure Proxy Settings (Use mitmproxy without authentication by default)
+    if use_mitmproxy:
+        chrome_options.add_argument(f"--proxy-server=http://127.0.0.1:{mitmproxy_port}")
+    else:
+        chrome_options.add_argument(f"--proxy-server=http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}")
+
     # Configure SSL & Security Flags for Mitmproxy
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")  # In case Chrome is restricted
+    chrome_options.add_argument("--headless")  # Remove if you want to see the browser
     chrome_options.add_argument("--disable-gpu")
 
     driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
@@ -168,7 +150,6 @@ def launch_chrome(target_url, use_mitmproxy):
     driver.get(target_url)
     driver.maximize_window()
     driver.implicitly_wait(10)
-    logging.info(f"Chrome launched with proxy: {proxy_url}")
     return driver
 
 # 🔹 JAVASCRIPT OTP EXTRACTION
@@ -180,8 +161,8 @@ def extract_otp_via_js(driver):
         otp_matches = re.findall(otp_pattern, otp_text)
         if otp_matches:
             return otp_matches[0]
-    except Exception as e:
-        logging.error(f"Error extracting OTP via JavaScript: {e}")
+    except Exception:
+        pass
     return None
 
 # 🔹 AUTOMATIC OTP EXTRACTION
@@ -190,7 +171,6 @@ def auto_extract_otp(driver, interceptor, gui):
     if otp:
         gui.update_otp(otp)
         print(f"✅ Captured OTP via JavaScript: {otp}")
-        logging.info(f"Captured OTP via JavaScript: {otp}")
     else:
         print("⚠ No OTP found via JavaScript, switching to mitmproxy...")
         interceptor.wait_for_otp()
@@ -207,17 +187,15 @@ def main():
     interceptor.set_gui(gui)
 
     target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
+
     messagebox.showinfo("Action Required", "🚀 Script will auto-detect OTP extraction method.")
     
-    try:
-        driver = launch_chrome(target_url, use_mitmproxy=True)
-        auto_extract_otp(driver, interceptor, gui)
-        root.mainloop()
-    except Exception as e:
-        logging.error(f"Error during execution: {e}")
-    finally:
-        driver.quit()
-        logging.info("Script finished.")
+    driver = launch_chrome(target_url, use_mitmproxy=True)
+    
+    auto_extract_otp(driver, interceptor, gui)
+    
+    root.mainloop()
+    driver.quit()
 
 if __name__ == "__main__":
     main()
