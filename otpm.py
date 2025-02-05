@@ -46,7 +46,7 @@ def kill_processes_using_port(port):
             try:
                 proc = psutil.Process(conn.pid)
                 proc.terminate()
-                ctx.log.info(f"Terminated process {conn.pid} using port {port}")
+                print(f"Terminated process {conn.pid} using port {port}")
             except psutil.NoSuchProcess:
                 pass
 
@@ -80,12 +80,12 @@ class OTPInterceptor:
                 otp = otp_matches[0]
                 if self.gui:
                     self.gui.update_otp(otp)
-                    ctx.log.info(f"Captured OTP from {flow.request.url}: {otp}")
+                    print(f"Captured OTP from {flow.request.url}: {otp}")
             self.waiting_for_otp = False
 
     def wait_for_otp(self):
         self.waiting_for_otp = True
-        ctx.log.info("Waiting for OTP request...")
+        print("Waiting for OTP request...")
 
 async def start_mitmproxy(gui, allowed_sites, interceptor):
     options = Options(listen_host='127.0.0.1', listen_port=8080)
@@ -123,6 +123,7 @@ def main():
     driver = launch_chrome(target_url)
     messagebox.showinfo("Action Required", "Log in and request an OTP, then click OK to start interception.")
     interceptor.wait_for_otp()
+    driver.quit()  # Ensure Chrome stays open until the user closes it manually
     root.mainloop()
 
 if __name__ == "__main__":
