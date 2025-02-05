@@ -41,11 +41,12 @@ def is_port_in_use(port):
 
 def launch_chrome():
     """Launches Chrome with predefined options."""
+    global PROXY_PORT  # Declare global variable here after initialization
+
     print("[*] Killing processes on port 8080...")
     kill_process_using_port(PROXY_PORT)
 
     # Check if default port is in use and find an alternative
-    global PROXY_PORT
     if is_port_in_use(PROXY_PORT):
         PROXY_PORT = find_free_port()
 
