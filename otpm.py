@@ -27,14 +27,15 @@ otp_pattern = r"\b\d{6}\b"
 
 # Function to kill processes using a specific port (8080)
 def kill_processes_using_port(port):
-    for proc in psutil.process_iter(attrs=['pid', 'name', 'connections']):
-        for conn in proc.connections(kind='inet'):
-            if conn.laddr.port == port:
-                try:
-                    proc.kill()
-                    ctx.log.info(f"Killed process {proc.pid} using port {port}")
-                except psutil.NoSuchProcess:
-                    pass
+    for conn in psutil.net_connections(kind='inet'):  # Fetching network connections
+        if conn.laddr.port == port:
+            pid = conn.pid
+            try:
+                proc = psutil.Process(pid)
+                proc.kill()  # Killing the process
+                ctx.log.info(f"Killed process {pid} using port {port}")
+            except psutil.NoSuchProcess:
+                pass
 
 # Create a simple tkinter window for displaying OTP
 class OTPGUI:
