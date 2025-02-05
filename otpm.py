@@ -5,8 +5,7 @@ from mitmproxy.tools.dump import DumpMaster
 from mitmproxy.options import Options
 
 import tkinter as tk
-from tkinter import messagebox, simpledialog
-import re
+from tkinter import messagebox
 import threading
 import os
 import psutil
@@ -21,6 +20,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium_stealth import stealth
+import re
 
 # Paths and Configurations
 CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
@@ -103,19 +103,24 @@ async def start_mitmproxy(gui, allowed_sites, interceptor):
     m.addons.add(interceptor)
     await m.run()
 
-# Launch Chrome in Normal Mode (User Interaction Enabled)
-def launch_chrome(use_mitmproxy):
+# Launch Chrome with Stealth Mode
+def launch_chrome(target_url, use_mitmproxy, interactive_mode=False):
     chrome_options = ChromeOptions()
-    
+
     if use_mitmproxy:
         chrome_options.add_argument("--proxy-server=http://127.0.0.1:8082")
 
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-    
-    # DO NOT use headless mode - allow user interaction
-    # chrome_options.add_argument("--headless")  <-- Removed to allow browsing
+
+    if interactive_mode:
+        chrome_options.add_argument("--incognito")
+        chrome_options.add_argument("--start-maximized")  # Allow interaction with the window
+        chrome_options.add_argument("--disable-headless")  # Disable headless mode
+    else:
+        chrome_options.add_argument("--headless")  # Use headless mode after login
+        chrome_options.add_argument("--disable-gpu")
 
     driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
     
@@ -129,6 +134,7 @@ def launch_chrome(use_mitmproxy):
         fix_hairline=True,
     )
 
+    driver.get(target_url)
     driver.maximize_window()
     driver.implicitly_wait(10)
     return driver
@@ -153,6 +159,18 @@ def load_allowed_sites():
     with open(ALLOWED_SITES_FILE, "r") as f:
         return [line.strip() for line in f.readlines() if line.strip()]
 
+# Automatic OTP Extraction Mode
+def auto_extract_otp(driver, interceptor, gui):
+    otp = extract_otp_via_js(driver)
+    if otp:
+        gui.update_otp(otp)
+        print(f"Captured OTP automatically via JavaScript: {otp}")
+    else:
+        print("No OTP found via JavaScript.")
+    # Try mitmproxy interception as fallback
+    interceptor.wait_for_otp()
+    asyncio.run(start_mitmproxy(gui, load_allowed_sites(), interceptor))
+
 # Main function
 def main():
     kill_processes_using_port(8082)
@@ -161,27 +179,14 @@ def main():
     gui = OTPGUI(root)
     interceptor = OTPInterceptor(allowed_sites)
     
-    attack_mode = simpledialog.askinteger("Mode", "Choose Mode:\n1. mitmproxy Interception\n2. JavaScript Extraction", minvalue=1, maxvalue=2)
-
-    mitm_thread = None
-    if attack_mode == 1:
-        mitm_thread = threading.Thread(target=lambda: asyncio.run(start_mitmproxy(gui, allowed_sites, interceptor)))
-        mitm_thread.start()
+    target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
     
-    # Open Chrome for User to Browse and Log In Manually
-    driver = launch_chrome(use_mitmproxy=(attack_mode == 1))
-
-    messagebox.showinfo("Action Required", "Browse the internet and log in manually. Click OK once you've requested an OTP.")
-
-    if attack_mode == 1:
-        interceptor.wait_for_otp()
-    else:
-        otp = extract_otp_via_js(driver)
-        if otp:
-            gui.update_otp(otp)
-            print(f"Captured OTP via JavaScript: {otp}")
-        else:
-            print("No OTP found via JavaScript.")
+    # Auto-detect OTP site and extraction method
+    messagebox.showinfo("Action Required", "The script will auto-detect the OTP extraction method.")
+    driver = launch_chrome(target_url, use_mitmproxy=True, interactive_mode=True)
+    
+    # Start auto OTP extraction
+    auto_extract_otp(driver, interceptor, gui)
     
     root.mainloop()
     driver.quit()
