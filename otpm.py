@@ -88,7 +88,7 @@ class OTPInterceptor:
         print("Waiting for OTP request...")
 
 async def start_mitmproxy(gui, allowed_sites, interceptor):
-    options = Options(listen_host='127.0.0.1', listen_port=8080)
+    options = Options(listen_host='127.0.0.1', listen_port=8082, ssl_insecure=True)
     m = DumpMaster(options)
     interceptor.set_gui(gui)
     m.addons.add(interceptor)
@@ -96,9 +96,10 @@ async def start_mitmproxy(gui, allowed_sites, interceptor):
 
 def launch_chrome(target_url):
     chrome_options = ChromeOptions()
-    chrome_options.add_argument("--proxy-server=http://127.0.0.1:8080")
+    chrome_options.add_argument("--proxy-server=http://127.0.0.1:8082")
     chrome_options.add_argument("--ignore-certificate-errors")
-    chrome_options.add_argument(f"--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+    chrome_options.add_argument("--disable-web-security")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
     driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
     driver.get(target_url)
     driver.maximize_window()
@@ -112,7 +113,7 @@ def load_allowed_sites():
         return [line.strip() for line in f.readlines() if line.strip()]
 
 def main():
-    kill_processes_using_port(8080)
+    kill_processes_using_port(8082)
     allowed_sites = load_allowed_sites()
     root = tk.Tk()
     gui = OTPGUI(root)
@@ -123,7 +124,6 @@ def main():
     driver = launch_chrome(target_url)
     messagebox.showinfo("Action Required", "Log in and request an OTP, then click OK to start interception.")
     interceptor.wait_for_otp()
-    driver.quit()  # Ensure Chrome stays open until the user closes it manually
     root.mainloop()
 
 if __name__ == "__main__":
