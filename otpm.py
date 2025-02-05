@@ -6,6 +6,7 @@ from mitmproxy.options import Options
 
 import tkinter as tk
 from tkinter import messagebox
+from tkinter import simpledialog
 import threading
 import os
 import psutil
