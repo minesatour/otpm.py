@@ -94,12 +94,16 @@ async def start_mitmproxy(gui, allowed_sites, interceptor):
     m.addons.add(interceptor)
     await m.run()
 
-def launch_chrome(target_url):
+def launch_chrome(target_url, mitmproxy_enabled=True):
     chrome_options = ChromeOptions()
-    chrome_options.add_argument("--proxy-server=http://127.0.0.1:8082")
+
+    # Use proxy only if mitmproxy is enabled
+    if mitmproxy_enabled:
+        chrome_options.add_argument("--proxy-server=http://127.0.0.1:8082")
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+    
     driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
     driver.get(target_url)
     driver.maximize_window()
@@ -118,12 +122,24 @@ def main():
     root = tk.Tk()
     gui = OTPGUI(root)
     interceptor = OTPInterceptor(allowed_sites)
+    
     target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
-    mitm_thread = threading.Thread(target=lambda: asyncio.run(start_mitmproxy(gui, allowed_sites, interceptor)))
-    mitm_thread.start()
-    driver = launch_chrome(target_url)
+    mitmproxy_thread = threading.Thread(target=lambda: asyncio.run(start_mitmproxy(gui, allowed_sites, interceptor)))
+    mitmproxy_thread.start()
+
     messagebox.showinfo("Action Required", "Log in and request an OTP, then click OK to start interception.")
+    
+    # Launch the browser without the proxy enabled initially
+    driver = launch_chrome(target_url, mitmproxy_enabled=False)
+    
+    # Now enable mitmproxy interception once the user is ready
     interceptor.wait_for_otp()
+    messagebox.showinfo("Ready", "Now enabling OTP interception.")
+    
+    # Enable mitmproxy interception after login attempt
+    driver.quit()  # Close the initial non-proxied instance
+    driver = launch_chrome(target_url, mitmproxy_enabled=True)
+    
     root.mainloop()
 
 if __name__ == "__main__":
