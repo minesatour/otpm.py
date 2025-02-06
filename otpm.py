@@ -160,4 +160,4 @@ def main():
     
     target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
     if target_url not in allowed_sites:
-        messagebox.showerror("Error", "The entered URL is not in the
+        messagebox.showerror("
