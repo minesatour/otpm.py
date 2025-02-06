@@ -67,31 +67,17 @@ def kill_processes_using_port(port):
             except psutil.NoSuchProcess:
                 pass
 
-# FETCH A FREE PROXY (IMPROVED)
+# FETCH A FREE PROXY
 def get_free_proxy():
     try:
         response = requests.get(PROXY_API_URL)
         if response.status_code == 200:
-            proxies = response.text.strip().split("\n")
-            for proxy in proxies:
-                proxy = proxy.strip()
-                if test_proxy(proxy):
-                    print(f"✅ Using working proxy: {proxy}")
-                    return proxy
-        print("❌ No working proxies found!")
+            proxies = response.text.strip().split("\r\n")
+            if proxies:
+                return proxies[0]  # Return the first available proxy
     except Exception as e:
         print(f"⚠ Failed to fetch proxy: {e}")
     return None
-
-# TEST IF A PROXY WORKS
-def test_proxy(proxy):
-    """Checks if the proxy is working by making a test request to Google."""
-    try:
-        test_url = "https://www.google.com"
-        response = requests.get(test_url, proxies={"http": f"http://{proxy}", "https": f"http://{proxy}"}, timeout=5)
-        return response.status_code == 200
-    except:
-        return False
 
 # GUI TO DISPLAY OTP
 class OTPGUI:
@@ -145,17 +131,17 @@ def run_mitmproxy_thread(interceptor):
     mitmproxy_thread.start()
 
 # LAUNCH CHROME WITH PROXY & MITMPROXY
-def launch_chrome(target_url):
+def launch_chrome(target_url, use_proxy):
     chrome_options = ChromeOptions()
-    free_proxy = get_free_proxy()
 
-    if free_proxy:
-        print(f"🆓 Using free proxy: {free_proxy}")
-        chrome_options.add_argument(f"--proxy-server=http://{free_proxy}")
-    else:
-        print("❌ No free proxies available. Exiting to prevent IP leak.")
-        return None
-
+    if use_proxy:
+        free_proxy = get_free_proxy()
+        if free_proxy:
+            print(f"🆓 Using free proxy: {free_proxy}")
+            chrome_options.add_argument(f"--proxy-server=http://{free_proxy}")
+        else:
+            print("❌ No free proxies available. Running without proxy.")
+    
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
     chrome_options.add_argument("--no-sandbox")
@@ -175,19 +161,23 @@ def main():
     setup_database()
 
     root = tk.Tk()
-    gui = OTPGUI(root)
-    interceptor = OTPInterceptor()
-    interceptor.set_gui(gui)
-
+    root.withdraw()
+    
+    use_proxy = messagebox.askyesno("Proxy Selection", "Do you want to use a proxy?")
     target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
     messagebox.showinfo("Action Required", "🚀 Script will auto-detect OTP extraction method.")
 
-    driver = launch_chrome(target_url)
+    interceptor = OTPInterceptor()
+    run_mitmproxy_thread(interceptor)
+
+    driver = launch_chrome(target_url, use_proxy)
     if not driver:
         return
     
     interceptor.wait_for_otp()
-    run_mitmproxy_thread(interceptor)
+    root.deiconify()
+    gui = OTPGUI(root)
+    interceptor.set_gui(gui)
 
     root.mainloop()
     driver.quit()
