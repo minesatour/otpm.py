@@ -119,6 +119,7 @@ class OTPInterceptor:
 
 # START MITMPROXY IN BACKGROUND
 def start_mitmproxy(interceptor):
+    asyncio.set_event_loop(asyncio.new_event_loop())  # Fix for RuntimeError
     options = Options(listen_host='127.0.0.1', listen_port=mitmproxy_port, ssl_insecure=True)
     m = DumpMaster(options)
     m.addons.add(interceptor)
@@ -133,7 +134,7 @@ def run_mitmproxy_thread(interceptor):
 # LAUNCH CHROME WITH PROXY & MITMPROXY
 def launch_chrome(target_url, use_proxy):
     chrome_options = ChromeOptions()
-
+    
     if use_proxy:
         free_proxy = get_free_proxy()
         if free_proxy:
@@ -160,25 +161,22 @@ def main():
     kill_processes_using_port(mitmproxy_port)
     setup_database()
 
+    print("1. Run with Proxy\n2. Run without Proxy")
+    choice = input("Choose an option: ")
+    use_proxy = choice == "1"
+    
+    target_url = input("Enter the OTP website URL: ")
+    print("🚀 Script will auto-detect OTP extraction method.")
+    
     root = tk.Tk()
-    root.withdraw()
-    
-    use_proxy = messagebox.askyesno("Proxy Selection", "Do you want to use a proxy?")
-    target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
-    messagebox.showinfo("Action Required", "🚀 Script will auto-detect OTP extraction method.")
-
-    interceptor = OTPInterceptor()
-    run_mitmproxy_thread(interceptor)
-
-    driver = launch_chrome(target_url, use_proxy)
-    if not driver:
-        return
-    
-    interceptor.wait_for_otp()
-    root.deiconify()
     gui = OTPGUI(root)
+    interceptor = OTPInterceptor()
     interceptor.set_gui(gui)
-
+    
+    driver = launch_chrome(target_url, use_proxy)
+    interceptor.wait_for_otp()
+    run_mitmproxy_thread(interceptor)
+    
     root.mainloop()
     driver.quit()
 
