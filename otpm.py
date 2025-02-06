@@ -10,12 +10,9 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium_stealth import stealth
-import logging
-import os
-import yaml  # For configuration management
 
 # CONFIGURATIONS
-CONFIG_FILE = "config.yaml"
+CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
 OTP_STORAGE_FILE = "captured_otps.db"
 OTP_PATTERN = r"\b\d{6}\b"  # Adjust this pattern based on the OTP format
 ALLOWED_SITES_FILE = "allowed_sites.txt"
@@ -29,41 +26,21 @@ USER_AGENTS = [
     # Add more User-Agents as needed
 ]
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Load configuration from YAML file
-def load_config():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, 'r') as file:
-            return yaml.safe_load(file)
-    else:
-        logging.warning("Configuration file not found. Using default settings.")
-        return {}
-
 # SETUP DATABASE
 def setup_database():
-    try:
-        conn = sqlite3.connect(OTP_STORAGE_FILE)
-        c = conn.cursor()
-        c.execute("CREATE TABLE IF NOT EXISTS otps (id INTEGER PRIMARY KEY, otp TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
-        conn.commit()
-        conn.close()
-        logging.info("Database setup complete.")
-    except Exception as e:
-        logging.error(f"Error setting up database: {e}")
+    conn = sqlite3.connect(OTP_STORAGE_FILE)
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS otps (id INTEGER PRIMARY KEY, otp TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
+    conn.commit()
+    conn.close()
 
 # STORE OTP IN DATABASE
 def store_otp(otp):
-    try:
-        conn = sqlite3.connect(OTP_STORAGE_FILE)
-        c = conn.cursor()
-        c.execute("INSERT INTO otps (otp) VALUES (?)", (otp,))
-        conn.commit()
-        conn.close()
-        logging.info(f"Stored OTP: {otp}")
-    except Exception as e:
-        logging.error(f"Error storing OTP: {e}")
+    conn = sqlite3.connect(OTP_STORAGE_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO otps (otp) VALUES (?)", (otp,))
+    conn.commit()
+    conn.close()
 
 # GUI TO DISPLAY OTP
 class OTPGUI:
@@ -100,15 +77,10 @@ def launch_chrome(target_url):
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--start-maximized")  # Start maximized to see the browser
 
-    try:
-        driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
-        stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32", webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
-        driver.get(target_url)
-        logging.info(f"Launched Chrome and navigated to {target_url}")
-        return driver
-    except Exception as e:
-        logging.error(f"Error launching Chrome: {e}")
-        return None
+    driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
+    stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32", webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
+    driver.get(target_url)
+    return driver
 
 # Load allowed sites from a file
 def load_allowed_sites():
@@ -116,7 +88,7 @@ def load_allowed_sites():
         with open(ALLOWED_SITES_FILE, 'r') as file:
             return [line.strip() for line in file if line.strip()]
     except FileNotFoundError:
-        logging.error("Allowed sites file not found. Please create 'allowed_sites.txt'.")
+        print("Allowed sites file not found. Please create 'allowed_sites.txt'.")
         return []
 
 # OTP INTERCEPTION
@@ -131,7 +103,7 @@ def intercept_otp(driver, gui, allowed_sites):
                 if otp_matches:
                     otp = otp_matches[0]
                     gui.update_otp(otp)
-                    logging.info(f"✅ Captured OTP: {otp}")
+                    print(f"✅ Captured OTP: {otp}")
 
 # STARTUP MENU
 def menu():
@@ -160,4 +132,20 @@ def main():
     
     target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
     if target_url not in allowed_sites:
-        messagebox.showerror("
+        messagebox.showerror("Error", "The entered URL is not in the allowed sites list.")
+        return
+    
+    messagebox.showinfo("Action Required", "🚀 Please log in and request the OTP.")
+    
+    driver = launch_chrome(target_url)
+    
+    # Run OTP interception in a separate thread
+    intercept_thread = threading.Thread(target=intercept_otp, args=(driver, gui, allowed_sites))
+    intercept_thread.daemon = True
+    intercept_thread.start()
+    
+    root.mainloop()
+    driver.quit()
+
+if __name__ == "__main__":
+    main()
