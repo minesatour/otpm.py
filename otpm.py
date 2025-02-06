@@ -6,6 +6,7 @@ import time
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service  # Ensure this is imported
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium_stealth import stealth
 
