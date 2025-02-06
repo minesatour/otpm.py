@@ -3,10 +3,11 @@ import re
 import sqlite3
 import threading
 import time
+import random
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service  # Ensure this is imported
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium_stealth import stealth
 
@@ -14,9 +15,16 @@ from selenium_stealth import stealth
 CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
 OTP_STORAGE_FILE = "captured_otps.db"
 OTP_PATTERN = r"\b\d{6}\b"  # Adjust this pattern based on the OTP format
-PROXY_LIST = ["http://proxy1:port", "http://proxy2:port"]  # Add real proxies here
-USE_PROXY = False  # Default setting
 ALLOWED_SITES_FILE = "allowed_sites.txt"
+
+# User-Agent list for rotation
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
+    "Mozilla/5.0 (Linux; Android 10; Pixel 3 XL) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Mobile Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+    # Add more User-Agents as needed
+]
 
 # SETUP DATABASE
 def setup_database():
@@ -39,9 +47,18 @@ class OTPGUI:
     def __init__(self, master):
         self.master = master
         self.master.title("Captured OTP")
-        self.master.geometry("300x150")
+        self.master.geometry("300x200")
         self.otp_label = tk.Label(master, text="Waiting for OTP...", font=("Arial", 12))
         self.otp_label.pack(pady=20)
+
+        self.capture_button = tk.Button(master, text="Capture OTP", command=self.start_capturing)
+        self.capture_button.pack(pady=10)
+
+        self.capturing = False  # Flag to control OTP capturing
+
+    def start_capturing(self):
+        self.capturing = True
+        self.otp_label.config(text="Capturing OTP...")
 
     def update_otp(self, otp):
         store_otp(otp)
@@ -49,12 +66,10 @@ class OTPGUI:
         messagebox.showinfo("OTP Captured", f"OTP: {otp}")
 
 # CHROME DRIVER SETUP
-def launch_chrome(target_url, use_proxy):
+def launch_chrome(target_url):
     chrome_options = ChromeOptions()
-    if use_proxy and PROXY_LIST:
-        proxy = PROXY_LIST[0]  # Simple proxy rotation
-        print(f"🆓 Using proxy: {proxy}")
-        chrome_options.add_argument(f"--proxy-server={proxy}")
+    user_agent = random.choice(USER_AGENTS)
+    chrome_options.add_argument(f"user-agent={user_agent}")
     
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-web-security")
@@ -79,29 +94,28 @@ def load_allowed_sites():
 # OTP INTERCEPTION
 def intercept_otp(driver, gui, allowed_sites):
     while True:
-        time.sleep(1)  # Polling interval
-        current_url = driver.current_url
-        if any(site in current_url for site in allowed_sites):
-            page_source = driver.page_source
-            otp_matches = re.findall(OTP_PATTERN, page_source)
-            if otp_matches:
-                otp = otp_matches[0]
-                gui.update_otp(otp)
-                print(f"✅ Captured OTP: {otp}")
+        time.sleep(random.uniform(2, 5))  # Random delay between checks
+        if gui.capturing:  # Only capture OTP if the user has clicked the button
+            current_url = driver.current_url
+            if any(site in current_url for site in allowed_sites):
+                page_source = driver.page_source
+                otp_matches = re.findall(OTP_PATTERN, page_source)
+                if otp_matches:
+                    otp = otp_matches[0]
+                    gui.update_otp(otp)
+                    print(f"✅ Captured OTP: {otp}")
 
 # STARTUP MENU
 def menu():
-    global USE_PROXY
     print("1. Run with Proxy")
     print("2. Run without Proxy")
     choice = input("Choose an option: ")
     if choice == "1":
-        USE_PROXY = True
+        print("Proxy option is not implemented in this version.")
     elif choice == "2":
-        USE_PROXY = False
+        print("Running without proxy.")
     else:
         print("❌ Invalid choice. Defaulting to no proxy.")
-        USE_PROXY = False
 
 # MAIN FUNCTION
 def main():
@@ -123,7 +137,7 @@ def main():
     
     messagebox.showinfo("Action Required", "🚀 Please log in and request the OTP.")
     
-    driver = launch_chrome(target_url, USE_PROXY)
+    driver = launch_chrome(target_url)
     
     # Run OTP interception in a separate thread
     intercept_thread = threading.Thread(target=intercept_otp, args=(driver, gui, allowed_sites))
