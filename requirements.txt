@@ -1,7 +1,7 @@
-mitmproxy==8.0.0
-selenium==4.8.0
-selenium-stealth==2.0.1
-psutil==5.9.0
-pycryptodome==3.15.0
-tkinter==0.1.0
+selenium
+selenium-stealth
+pillow
+pytesseract
+sqlite3  # Included in Python by default, but listed for clarity
+
 
