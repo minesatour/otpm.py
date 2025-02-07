@@ -1,27 +1,33 @@
-# Ignore Python bytecode files
+# Ignore Python bytecode & cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Ignore virtual environment folder
-venv/
+# Ignore environment files
+.env
+*.env
 
-# Ignore credentials files or sensitive data (e.g., OTP storage)
-OTP_STORAGE_FILE
-*.enc
+# Ignore logs
+*.log
+logs/
+debug.log
 
-# Ignore browser drivers if necessary
+# Ignore database files
+*.db
+*.sqlite3
+captured_otps.db
+
+# Ignore Selenium WebDriver binaries (if downloaded manually)
 chromedriver
 chromedriver.exe
 
-# Ignore log files
-*.log
+# Ignore test results
+*.pytest_cache/
 
-# Ignore system files
+# Ignore MacOS system files
 .DS_Store
-Thumbs.db
 
-# Ignore the allowed sites file to keep it private
-allowed_sites.txt
-
+# Ignore VSCode and PyCharm config files
+.vscode/
+.idea/
