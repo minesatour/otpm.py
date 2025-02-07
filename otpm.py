@@ -10,6 +10,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium_stealth import stealth
+from PIL import Image
+import pytesseract
 
 # CONFIGURATIONS
 CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
@@ -32,6 +34,9 @@ USER_AGENTS = [
     "Mozilla/5.0 (Linux; Android 10; Pixel 3 XL) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Mobile Safari/537.36",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
 ]
+
+# Proxy List (Replace with working proxies)
+PROXY_LIST = ["proxy1:port", "proxy2:port"]  # Add your proxies here
 
 # SETUP DATABASE
 def setup_database():
@@ -75,7 +80,7 @@ class OTPGUI:
         self.capture_button = tk.Button(master, text="Start OTP Capture", command=self.start_capturing)
         self.capture_button.pack(pady=10)
 
-        self.capturing = False  # Flag to control OTP capturing
+        self.capturing = False
 
     def start_capturing(self):
         self.capturing = True
@@ -86,8 +91,12 @@ class OTPGUI:
         self.otp_label.config(text=f"Captured OTP: {otp}")
         messagebox.showinfo("OTP Captured", f"OTP: {otp}")
 
+# PROXY HANDLING
+def get_random_proxy():
+    return random.choice(PROXY_LIST)
+
 # CHROME DRIVER SETUP
-def launch_chrome(target_url):
+def launch_chrome(target_url, use_proxy=False):
     chrome_options = ChromeOptions()
     chrome_options.add_argument(f"user-agent={random.choice(USER_AGENTS)}")
     chrome_options.add_argument("--ignore-certificate-errors")
@@ -95,6 +104,11 @@ def launch_chrome(target_url):
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--start-maximized")
+
+    if use_proxy:
+        proxy = get_random_proxy()
+        chrome_options.add_argument(f"--proxy-server={proxy}")
+        print(f"🌐 Using Proxy: {proxy}")
 
     driver = webdriver.Chrome(service=Service(CHROMEDRIVER_PATH), options=chrome_options)
     stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32",
@@ -114,63 +128,71 @@ def load_allowed_sites():
 # OTP INTERCEPTION (SMART DETECTION)
 def intercept_otp(driver, gui, allowed_sites):
     otp_captured = False
-    while True:
-        time.sleep(random.uniform(2, 5))  # Randomised delay
-        if gui.capturing:  # Only capture OTP if user activated capturing
-            current_url = driver.current_url
-            if any(site in current_url for site in allowed_sites):
-                page_source = driver.page_source
-                otp_candidates = re.findall(OTP_PATTERN, page_source)
+    while not otp_captured:
+        time.sleep(random.uniform(2, 5))
+        if gui.capturing:
+            try:
+                current_url = driver.current_url
+                if any(site in current_url for site in allowed_sites):
+                    page_source = driver.page_source
+                    otp_candidates = re.findall(OTP_PATTERN, page_source)
 
-                for otp in otp_candidates:
-                    # Check for OTP keywords in surrounding text
-                    if any(keyword in page_source for keyword in OTP_KEYWORDS):
-                        if not otp_captured:  # Ensure only one OTP is captured
+                    for otp in otp_candidates:
+                        if any(keyword in page_source for keyword in OTP_KEYWORDS):
                             otp_captured = True
                             gui.update_otp(otp)
                             print(f"✅ Captured OTP: {otp}")
-                            return  # Exit after capturing one OTP
+                            return
+            except Exception as e:
+                print(f"⚠ OTP Interception Error: {e}")
 
-# STARTUP MENU
+# OCR-BASED OTP DETECTION
+def extract_otp_from_image(image_path):
+    text = pytesseract.image_to_string(Image.open(image_path))
+    otp_candidates = re.findall(OTP_PATTERN, text)
+    if otp_candidates:
+        print(f"🖼 OCR Captured OTP: {otp_candidates[0]}")
+        return otp_candidates[0]
+    return None
+
+# JavaScript-Based OTP Monitoring
+def monitor_otp_live(driver):
+    js_script = """
+    setInterval(() => {
+        let otp_elements = document.body.innerText.match(/\b\d{6}\b/g);
+        if (otp_elements) {
+            console.log('OTP:', otp_elements[0]);
+        }
+    }, 1000);
+    """
+    driver.execute_script(js_script)
+
+# MENU
 def menu():
     print("1. Run with Proxy")
     print("2. Run without Proxy")
     choice = input("Choose an option: ")
-    if choice == "1":
-        print("Proxy option is not implemented in this version.")
-    elif choice == "2":
-        print("Running without proxy.")
-    else:
-        print("❌ Invalid choice. Defaulting to no proxy.")
+    return choice == "1"
 
 # MAIN FUNCTION
 def main():
     setup_database()
-    cleanup_otps()  # Clean old OTPs on startup
-    menu()
-    
+    cleanup_otps()
+    use_proxy = menu()
+
     root = tk.Tk()
     gui = OTPGUI(root)
-    
+
     allowed_sites = load_allowed_sites()
-    if not allowed_sites:
-        messagebox.showerror("Error", "No allowed sites found. Please add sites to 'allowed_sites.txt'.")
-        return
-    
     target_url = simpledialog.askstring("Target Website", "Enter the OTP website URL:")
-    if target_url not in allowed_sites:
-        messagebox.showerror("Error", "The entered URL is not in the allowed sites list.")
-        return
-    
-    messagebox.showinfo("Action Required", "🚀 Please log in and request the OTP.")
-    
-    driver = launch_chrome(target_url)
-    
-    # Run OTP interception in a separate thread
+
+    driver = launch_chrome(target_url, use_proxy)
+    monitor_otp_live(driver)
+
     intercept_thread = threading.Thread(target=intercept_otp, args=(driver, gui, allowed_sites))
     intercept_thread.daemon = True
     intercept_thread.start()
-    
+
     root.mainloop()
     driver.quit()
 
